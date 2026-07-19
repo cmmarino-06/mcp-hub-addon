@@ -1,5 +1,5 @@
 name: "MCP Hub"
-version: "0.0.1"
+version: "0.0.2"
 slug: "mcp_hub"
 description: "Aggregates HA MCP + unifi-mcp behind one Streamable HTTP endpoint"
 arch:
@@ -17,6 +17,6 @@ options:
 schema:
   ha_mcp_url: "str"
   unifi_mcp_url: "str"
-  unifi_mcp_token: "str"
-  hub_secret_path: "str"
+  unifi_mcp_token: "password"
+  hub_secret_path: "str?"
   log_level: "list(debug|info|warning|error)"
