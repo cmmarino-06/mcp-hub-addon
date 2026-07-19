@@ -27,9 +27,6 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from starlette.applications import Starlette
-from starlette.responses import PlainTextResponse
-from starlette.routing import Mount, Route
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("mcp-hub")
@@ -120,24 +117,70 @@ session_manager = StreamableHTTPSessionManager(
 )
 
 
-async def healthz(request):
-    return PlainTextResponse("ok")
+# --- Top-level ASGI app: explicit dispatch, no framework routing ----------
+#
+# Deliberately NOT using Starlette's Router/Mount/Route here. Two issues
+# surfaced going that route:
+#   1. Mount()'s default trailing-slash redirect is a 307 built as http://
+#      (uvicorn behind Cloudflare Tunnel doesn't know TLS was terminated
+#      upstream) — a real downgrade, not just an inconvenience.
+#   2. Disabling that redirect makes Mount's regex require the trailing
+#      slash to match at all — the bare secret-path URL (what we actually
+#      hand out) then 404s. Route() isn't a clean fix either: it detects
+#      session_manager.handle_request as a plain bound method and wraps it
+#      as func(request) -> response, which is the wrong calling convention
+#      for a raw ASGI callable.
+# An explicit dispatcher sidesteps all of it: exact string comparison,
+# no regex, no trailing-slash convention to fight.
+
+_SECRET_PATH_BARE = HUB_SECRET_PATH.rstrip("/")
 
 
-@contextlib.asynccontextmanager
-async def lifespan(app):
-    async with session_manager.run():
-        log.info("mcp-hub ready — backends: %s", list(BACKENDS))
-        yield
+async def app(scope, receive, send):
+    if scope["type"] == "lifespan":
+        while True:
+            message = await receive()
+            if message["type"] == "lifespan.startup":
+                await _session_manager_ctx.__aenter__()
+                log.info("mcp-hub ready — backends: %s", list(BACKENDS))
+                await send({"type": "lifespan.startup.complete"})
+            elif message["type"] == "lifespan.shutdown":
+                await _session_manager_ctx.__aexit__(None, None, None)
+                await send({"type": "lifespan.shutdown.complete"})
+                return
+        return
+
+    if scope["type"] != "http":
+        return
+
+    path = scope["path"].rstrip("/") or "/"
+
+    if path == "/healthz":
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"text/plain")],
+            }
+        )
+        await send({"type": "http.response.body", "body": b"ok"})
+        return
+
+    if path == _SECRET_PATH_BARE:
+        await session_manager.handle_request(scope, receive, send)
+        return
+
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 404,
+            "headers": [(b"content-type", b"text/plain")],
+        }
+    )
+    await send({"type": "http.response.body", "body": b"Not Found"})
 
 
-app = Starlette(
-    routes=[
-        Mount(HUB_SECRET_PATH, app=session_manager.handle_request),
-        Route("/healthz", healthz),  # NOT proxied through the tunnel by default
-    ],
-    lifespan=lifespan,
-)
+_session_manager_ctx = session_manager.run()
 
 
 if __name__ == "__main__":
