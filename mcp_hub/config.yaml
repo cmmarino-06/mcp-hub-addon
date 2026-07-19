@@ -1,5 +1,5 @@
 name: "MCP Hub"
-version: "0.0.2"
+version: "0.0.3"
 slug: "mcp_hub"
 description: "Aggregates HA MCP + unifi-mcp behind one Streamable HTTP endpoint"
 arch:
