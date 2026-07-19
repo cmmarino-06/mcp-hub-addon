@@ -1,0 +1,22 @@
+name: "MCP Hub"
+version: "0.0.1"
+slug: "mcp_hub"
+description: "Aggregates HA MCP + unifi-mcp behind one Streamable HTTP endpoint"
+arch:
+  - aarch64
+  - amd64
+init: false
+ports:
+  9585/tcp: 9585
+options:
+  ha_mcp_url: "http://192.168.1.240:9583/private_j5JkKD6fZqaEIrCbplEDWQ"
+  unifi_mcp_url: "http://192.168.1.240:3714"
+  unifi_mcp_token: ""
+  hub_secret_path: ""
+  log_level: "info"
+schema:
+  ha_mcp_url: "str"
+  unifi_mcp_url: "str"
+  unifi_mcp_token: "str"
+  hub_secret_path: "str"
+  log_level: "list(debug|info|warning|error)"
